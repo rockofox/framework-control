@@ -328,6 +328,8 @@ pub struct PowerCapabilities {
 pub struct PowerState {
     // Method-specific (platform populates what it can)
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub package_power_watts: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub tdp_limit_watts: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub thermal_limit_c: Option<u32>,

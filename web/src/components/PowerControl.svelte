@@ -429,6 +429,21 @@
             class="flex flex-wrap items-center gap-x-2 gap-y-1 min-w-0 justify-center mr-auto"
         >
             {#if showControls && currentState}
+                {#if currentState.package_power_watts != null}
+                    <span class="opacity-60">•</span>
+                    <span
+                        class="inline-flex items-center gap-1 whitespace-nowrap"
+                    >
+                        <Icon
+                            icon="mdi:flash-outline"
+                            class="w-4 h-4 text-success"
+                        />
+                        <span class="tabular-nums text-xs">
+                            {currentState.package_power_watts.toFixed(1)} W
+                        </span>
+                    </span>
+                {/if}
+
                 {#if currentState.tdp_limit_watts != null}
                     <span class="opacity-60">•</span>
                     <span

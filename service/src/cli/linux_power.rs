@@ -1,6 +1,7 @@
 use crate::types::{PowerCapabilities, PowerState};
 use std::path::{Path, PathBuf};
 use tokio::fs;
+use tokio::time::{sleep, Duration, Instant};
 use tracing::{debug, info, warn};
 
 /// Linux-native power management using kernel interfaces
@@ -8,6 +9,7 @@ use tracing::{debug, info, warn};
 pub struct LinuxPower {
     amd_pstate: Option<AmdPStateBackend>,
     cpufreq: Option<CpufreqBackend>,
+    rapl: Option<RaplBackend>,
 }
 
 impl LinuxPower {
@@ -16,6 +18,7 @@ impl LinuxPower {
 
         let amd_pstate = AmdPStateBackend::detect().await;
         let cpufreq = CpufreqBackend::detect().await;
+        let rapl = RaplBackend::detect().await;
 
         // Log what we found
         if amd_pstate.is_some() {
@@ -24,12 +27,19 @@ impl LinuxPower {
         if cpufreq.is_some() {
             info!("cpufreq detected: governor and frequency control available");
         }
+        if rapl.is_some() {
+            info!("RAPL powercap detected: package power telemetry available");
+        }
 
-        if amd_pstate.is_none() && cpufreq.is_none() {
+        if amd_pstate.is_none() && cpufreq.is_none() && rapl.is_none() {
             warn!("No power management interfaces found");
         }
 
-        Ok(Self { amd_pstate, cpufreq })
+        Ok(Self {
+            amd_pstate,
+            cpufreq,
+            rapl,
+        })
     }
 
     pub async fn get_capabilities(&self) -> PowerCapabilities {
@@ -58,6 +68,11 @@ impl LinuxPower {
 
     pub async fn get_state(&self) -> Result<PowerState, String> {
         let mut state = PowerState::default();
+
+        // Read package power telemetry
+        if let Some(rapl) = &self.rapl {
+            state.package_power_watts = rapl.get_package_power_watts().await.ok();
+        }
 
         // Read AMD P-State state
         if let Some(amd_pstate) = &self.amd_pstate {
@@ -104,6 +119,67 @@ impl LinuxPower {
         let max = max_mhz.unwrap_or(hw_max);
         let min = min_mhz.unwrap_or(hw_min).min(max);
         cpufreq.set_frequency_limits(min, max).await
+    }
+}
+
+// RAPL/powercap backend (package power telemetry)
+#[derive(Clone)]
+struct RaplBackend {
+    energy_path: PathBuf,
+    max_energy_range_uj: Option<u64>,
+}
+
+impl RaplBackend {
+    async fn detect() -> Option<Self> {
+        let powercap_path = Path::new("/sys/class/powercap");
+        let mut entries = fs::read_dir(powercap_path).await.ok()?;
+
+        while let Ok(Some(entry)) = entries.next_entry().await {
+            let path = entry.path();
+            let energy_path = path.join("energy_uj");
+            if !energy_path.exists() {
+                continue;
+            }
+
+            let name = read_sysfs_string(&path.join("name")).await.unwrap_or_default();
+            if !name.starts_with("package-") {
+                continue;
+            }
+
+            let max_energy_range_uj = read_sysfs_u64(&path.join("max_energy_range_uj")).await.ok();
+            debug!("Found RAPL package power telemetry at {}", energy_path.display());
+
+            return Some(Self {
+                energy_path,
+                max_energy_range_uj,
+            });
+        }
+
+        None
+    }
+
+    async fn get_package_power_watts(&self) -> Result<f32, String> {
+        const SAMPLE_MS: u64 = 120;
+
+        let start_energy = read_sysfs_u64(&self.energy_path).await?;
+        let start = Instant::now();
+        sleep(Duration::from_millis(SAMPLE_MS)).await;
+        let end_energy = read_sysfs_u64(&self.energy_path).await?;
+        let elapsed = start.elapsed().as_secs_f32();
+
+        if elapsed <= 0.0 {
+            return Err("RAPL sample interval was zero".to_string());
+        }
+
+        let delta_uj = if end_energy >= start_energy {
+            end_energy - start_energy
+        } else if let Some(max) = self.max_energy_range_uj {
+            max.saturating_sub(start_energy).saturating_add(end_energy)
+        } else {
+            return Err("RAPL energy counter wrapped without max range".to_string());
+        };
+
+        Ok((delta_uj as f32 / 1_000_000.0) / elapsed)
     }
 }
 

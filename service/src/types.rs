@@ -277,6 +277,14 @@ pub struct BatteryInfo {
 // Combined power response used by /power
 #[derive(Debug, Clone, Serialize, Deserialize, Object)]
 pub struct PowerResponse {
+    /// AC power presence as reported by framework_tool --power.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ac_present: Option<bool>,
+
+    /// Main battery presence as reported by framework_tool --power.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub battery_present: Option<bool>,
+
     /// Battery info (framework_tool --power) + charge limits (charge-limit CLI)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub battery: Option<BatteryInfo>,

@@ -62,6 +62,7 @@
 
     // Battery info
     let acPresent: boolean | undefined;
+    let batteryPresent: boolean | undefined;
     let batteryPct: number | undefined;
     let chargerWatts: number | undefined;
     let chargerRequestedWatts: number | undefined;
@@ -86,8 +87,14 @@
             capabilities.supports_frequency_limits);
 
     $: showControls = hasCheckedStatus && hasAnyPowerCapability;
+    $: isNoBatteryDevice = batteryPresent === false;
+    $: showProfileSelector = showControls && !isNoBatteryDevice;
+    $: if (isNoBatteryDevice && activeProfile !== "ac") {
+        activeProfile = "ac";
+    }
 
     $: hasFreqLimitsMismatchWarning = (() => {
+        if (isNoBatteryDevice) return false;
         if (!capabilities?.supports_frequency_limits) return false;
         const acMin = !!powerConfig?.ac?.min_freq_mhz?.enabled;
         const acMax = !!powerConfig?.ac?.max_freq_mhz?.enabled;
@@ -101,6 +108,10 @@
     function recomputeHighTdpUnlocked() {
         if (!capabilities?.supports_tdp) return;
         const acVal = powerConfig.ac?.tdp_watts?.value ?? 0;
+        if (isNoBatteryDevice) {
+            highTdpUnlocked = acVal > 120;
+            return;
+        }
         const batVal = powerConfig.battery?.tdp_watts?.value ?? 0;
         highTdpUnlocked = acVal > 120 || batVal > 60;
     }
@@ -153,13 +164,16 @@
             currentState = resp.power_control?.current_state ?? null;
 
             const bat = resp.battery;
-            acPresent = bat?.ac_present;
-            batteryPct = bat?.percentage;
+            acPresent = resp.ac_present ?? bat?.ac_present;
+            batteryPresent = resp.battery_present;
+            batteryPct = batteryPresent === false ? undefined : bat?.percentage;
             updateChargerWattage(bat);
+            recomputeHighTdpUnlocked();
 
         } catch (_) {
             capabilities = null;
             currentState = null;
+            batteryPresent = undefined;
         } finally {
             hasCheckedStatus = true;
         }
@@ -280,7 +294,8 @@
 >
     {#if showControls}
         <div class="flex items-center">
-            <div class="join border border-primary/35">
+            {#if showProfileSelector}
+                <div class="join border border-primary/35">
                 <input
                     type="radio"
                     name="power-profile"
@@ -299,10 +314,11 @@
                     on:change={() => setActiveProfile("battery")}
                     checked={activeProfile === "battery"}
                 />
-            </div>
+                </div>
+            {/if}
 
             {#if hasFreqLimitsMismatchWarning}
-                <div class="relative ml-1">
+                <div class="relative {showProfileSelector ? 'ml-1' : ''}">
                     <button
                         class="btn btn-ghost btn-xs text-warning"
                         aria-label="Frequency limits warning"
@@ -499,18 +515,34 @@
             {/if}
         </div>
         <div class="flex gap-x-2 gap-y-1 justify-end whitespace-nowrap">
-            <span class={`inline-flex items-center gap-1 whitespace-nowrap`}>
-                <Icon
-                    icon={acPresent ? "mdi:battery-charging" : "mdi:battery"}
-                    class={`w-3.5 h-3.5 ${acPresent ? "animate-pulse" : ""}  ${acPresent ? "text-success" : ""}`}
-                />
-                <span class="tabular-nums text-xs">{batteryPct ?? "—"}%</span>
-            </span>
-            <span class="opacity-60">•</span>
-            <span
-                class={`text-xs opacity-90 ${acPresent ? "text-success" : "text-secondary"}`}
-                >{acPresent ? "Plugged in" : "On battery"}</span
-            >
+            {#if isNoBatteryDevice}
+                <span class="inline-flex items-center gap-1 whitespace-nowrap">
+                    <Icon
+                        icon="mdi:power-plug-outline"
+                        class="w-3.5 h-3.5 text-success"
+                    />
+                    <span class="text-xs opacity-90 text-success"
+                        >Plugged in</span
+                    >
+                </span>
+            {:else}
+                <span
+                    class={`inline-flex items-center gap-1 whitespace-nowrap`}
+                >
+                    <Icon
+                        icon={acPresent ? "mdi:battery-charging" : "mdi:battery"}
+                        class={`w-3.5 h-3.5 ${acPresent ? "animate-pulse" : ""}  ${acPresent ? "text-success" : ""}`}
+                    />
+                    <span class="tabular-nums text-xs"
+                        >{batteryPct ?? "—"}%</span
+                    >
+                </span>
+                <span class="opacity-60">•</span>
+                <span
+                    class={`text-xs opacity-90 ${acPresent ? "text-success" : "text-secondary"}`}
+                    >{acPresent ? "Plugged in" : "On battery"}</span
+                >
+            {/if}
         </div>
     </div>
 

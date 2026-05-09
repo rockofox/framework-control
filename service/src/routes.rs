@@ -148,14 +148,19 @@ impl Api {
     async fn get_power(&self, state: Data<&AppState>) -> ApiResult<crate::types::PowerResponse> {
         let cli = require_framework_tool_async(&state).await?;
         let p = cli.power().await.map_err(map_cli_err)?;
+        let has_battery = p.battery_present != Some(false);
 
         // Also include charge limit min/max when available; do not fail if missing
-        let limits = match cli.charge_limit_get().await {
-            Ok(info) => info,
-            Err(_e) => Default::default(),
+        let limits = if has_battery {
+            match cli.charge_limit_get().await {
+                Ok(info) => info,
+                Err(_e) => Default::default(),
+            }
+        } else {
+            Default::default()
         };
-        // Build API-facing battery info by combining parsed battery + limits (always include)
-        let battery_api: Option<crate::types::BatteryInfo> = Some(crate::types::BatteryInfo {
+        // Build API-facing battery info by combining parsed battery + limits.
+        let battery_api: Option<crate::types::BatteryInfo> = has_battery.then(|| crate::types::BatteryInfo {
             power_info: p.clone(),
             limits,
         });
@@ -206,6 +211,8 @@ impl Api {
         };
 
         Ok(Json(crate::types::PowerResponse {
+            ac_present: p.ac_present,
+            battery_present: p.battery_present,
             battery: battery_api,
             power_control,
         }))

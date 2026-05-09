@@ -29,6 +29,18 @@ pub async fn run(
         let ft_opt = { framework_tool_lock.read().await.clone() };
 
         if let Some(cli) = ft_opt {
+            if let Ok(power) = cli.power().await {
+                if power.battery_present == Some(false) {
+                    last_charge_limit_pct = None;
+                    last_rate_c = None;
+                    last_threshold_pct = None;
+                    last_charge_apply_at = None;
+                    last_rate_apply_at = None;
+                    sleep(Duration::from_secs(1)).await;
+                    continue;
+                }
+            }
+
             if let Some(setting) = cfg_bat.charge_limit_max_pct.clone() {
                 if setting.enabled {
                     let desired = setting.value.clamp(CL_MIN, CL_MAX);

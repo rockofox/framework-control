@@ -3,8 +3,9 @@ use std::sync::Arc;
 use tokio::time::{sleep, Duration, Instant};
 use tracing::{debug, info, warn};
 
+use crate::cli::framework_tool_parser::PowerBatteryInfo;
 use crate::cli::FrameworkTool;
-use crate::types::Config;
+use crate::types::{Config, PowerConfig, PowerProfile};
 use crate::utils::reconciler::{ReconcileOutcome, Reconciler, ReconcilerPolicy, SettingIo};
 
 #[cfg(target_os = "windows")]
@@ -15,10 +16,19 @@ use crate::cli::LinuxPower;
 
 const LOOP_INTERVAL_SECS: u64 = 1;
 
+fn select_profile_from_power(cfg_power: PowerConfig, power: &PowerBatteryInfo) -> Option<PowerProfile> {
+    match (power.battery_present, power.ac_present) {
+        (Some(false), _) => cfg_power.ac,
+        (_, Some(true)) => cfg_power.ac,
+        (_, Some(false)) => cfg_power.battery,
+        _ => None,
+    }
+}
+
 async fn get_profile(
     cfg: &Arc<tokio::sync::RwLock<Config>>,
     framework_tool_lock: &Arc<tokio::sync::RwLock<Option<FrameworkTool>>>,
-) -> Option<crate::types::PowerProfile> {
+) -> Option<PowerProfile> {
     let Some(ft) = framework_tool_lock.read().await.clone() else {
         return None;
     };
@@ -28,13 +38,7 @@ async fn get_profile(
     let Ok(p) = ft.power().await else {
         return None;
     };
-    let Some(ac_present) = p.ac_present else {
-        return None;
-    };
-
-    let maybe_profile = if ac_present { cfg_power.ac } else { cfg_power.battery };
-
-    maybe_profile
+    select_profile_from_power(cfg_power, &p)
 }
 
 fn log_outcome(setting: &str, target: &str, outcome: &ReconcileOutcome) {
@@ -224,6 +228,75 @@ pub async fn run(
         }
 
         sleep(Duration::from_secs(LOOP_INTERVAL_SECS)).await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::{PowerConfig, PowerProfile, SettingU32};
+
+    fn profile(value: u32) -> PowerProfile {
+        PowerProfile {
+            thermal_limit_c: Some(SettingU32 { enabled: true, value }),
+            ..Default::default()
+        }
+    }
+
+    fn selected_value(power: PowerBatteryInfo) -> Option<u32> {
+        let cfg = PowerConfig {
+            ac: Some(profile(90)),
+            battery: Some(profile(70)),
+        };
+        select_profile_from_power(cfg, &power).and_then(|p| p.thermal_limit_c.map(|s| s.value))
+    }
+
+    #[test]
+    fn selects_ac_profile_when_battery_present_and_ac_connected() {
+        assert_eq!(
+            selected_value(PowerBatteryInfo {
+                battery_present: Some(true),
+                ac_present: Some(true),
+                ..Default::default()
+            }),
+            Some(90)
+        );
+    }
+
+    #[test]
+    fn selects_battery_profile_when_battery_present_and_ac_disconnected() {
+        assert_eq!(
+            selected_value(PowerBatteryInfo {
+                battery_present: Some(true),
+                ac_present: Some(false),
+                ..Default::default()
+            }),
+            Some(70)
+        );
+    }
+
+    #[test]
+    fn selects_ac_profile_when_no_battery_is_present() {
+        assert_eq!(
+            selected_value(PowerBatteryInfo {
+                battery_present: Some(false),
+                ac_present: None,
+                ..Default::default()
+            }),
+            Some(90)
+        );
+    }
+
+    #[test]
+    fn skips_when_power_source_is_unknown_and_battery_is_not_explicitly_absent() {
+        assert_eq!(
+            selected_value(PowerBatteryInfo {
+                battery_present: None,
+                ac_present: None,
+                ..Default::default()
+            }),
+            None
+        );
     }
 }
 

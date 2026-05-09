@@ -386,4 +386,22 @@ Battery Status
         assert_eq!(p.cycle_count, Some(58));
         assert_eq!(p.charging, Some(true));
     }
+
+    #[test]
+    fn parse_power_no_battery_sample() {
+        let s = r#"
+Charger Status
+  AC is:            connected
+  Charger Voltage:  20000mV
+  Charger Current:  5000mA
+Battery Status
+  AC is:            connected
+  Battery is:       not connected
+        "#;
+        let p = parse_power(s);
+        assert_eq!(p.ac_present, Some(true));
+        assert_eq!(p.battery_present, Some(false));
+        assert_eq!(p.percentage, None);
+        assert_eq!(p.design_capacity_mah, None);
+    }
 }

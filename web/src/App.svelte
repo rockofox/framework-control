@@ -14,6 +14,7 @@
 
     let healthy: boolean = false;
     let cliPresent: boolean = true;
+    let batteryPresent: boolean | undefined = undefined;
 
     let pollId: ReturnType<typeof setInterval> | null = null;
 
@@ -26,6 +27,10 @@
     let serviceCurrentVersion: string | null = null;
     let serviceLatestVersion: string | null = null;
     let showMismatchGate = false;
+    $: panelIds =
+        batteryPresent === false
+            ? ["telemetry", "fan", "power"]
+            : ["telemetry", "fan", "power", "battery"];
 
     onMount(async () => {
         await pollHealthOnce();
@@ -52,8 +57,23 @@
             const res = await DefaultService.health();
             healthy = true;
             cliPresent = res.cli_present;
+            if (cliPresent) {
+                await pollBatteryPresenceOnce();
+            } else {
+                batteryPresent = undefined;
+            }
         } catch {
             healthy = false;
+            batteryPresent = undefined;
+        }
+    }
+
+    async function pollBatteryPresenceOnce() {
+        try {
+            const res = await DefaultService.getPower();
+            batteryPresent = res.battery_present;
+        } catch {
+            batteryPresent = undefined;
         }
     }
     onDestroy(() => {
@@ -76,7 +96,7 @@
                 (healthy ? "items-start" : "items-stretch") +
                 " gap-4"}
         >
-            {#each ["telemetry", "fan", "power", "battery"] as pid (pid)}
+            {#each panelIds as pid (pid)}
                 <div class={"w-full lg:w-[calc(50%-0.51rem)]"}>
                     {#if pid === "telemetry"}
                         <Panel title="Sensors" expandable={healthy}>

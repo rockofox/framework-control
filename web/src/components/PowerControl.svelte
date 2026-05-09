@@ -496,11 +496,11 @@
                 {/if}
             {/if}
 
-            {#if acPresent && showControls}
+            {#if acPresent && showControls && !isNoBatteryDevice}
                 <span class="opacity-60">•</span>
             {/if}
 
-            {#if acPresent}
+            {#if acPresent && !isNoBatteryDevice}
                 <span class="inline-flex items-center gap-1 whitespace-nowrap">
                     <Icon icon="mdi:power-plug-outline" class="w-3.5 h-3.5" />
                     <span class="tabular-nums text-xs"
@@ -514,18 +514,8 @@
                 </span>
             {/if}
         </div>
-        <div class="flex gap-x-2 gap-y-1 justify-end whitespace-nowrap">
-            {#if isNoBatteryDevice}
-                <span class="inline-flex items-center gap-1 whitespace-nowrap">
-                    <Icon
-                        icon="mdi:power-plug-outline"
-                        class="w-3.5 h-3.5 text-success"
-                    />
-                    <span class="text-xs opacity-90 text-success"
-                        >Plugged in</span
-                    >
-                </span>
-            {:else}
+        {#if !isNoBatteryDevice}
+            <div class="flex gap-x-2 gap-y-1 justify-end whitespace-nowrap">
                 <span
                     class={`inline-flex items-center gap-1 whitespace-nowrap`}
                 >
@@ -542,8 +532,8 @@
                     class={`text-xs opacity-90 ${acPresent ? "text-success" : "text-secondary"}`}
                     >{acPresent ? "Plugged in" : "On battery"}</span
                 >
-            {/if}
-        </div>
+            </div>
+        {/if}
     </div>
 
     {#if !hasCheckedStatus}

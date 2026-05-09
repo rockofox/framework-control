@@ -35,8 +35,14 @@ async fn get_profile(
 
     let cfg_power = { cfg.read().await.power.clone() };
 
-    let Ok(p) = ft.power().await else {
-        return None;
+    let p = match ft.power().await {
+        Ok(power) => power,
+        Err(_) if ft.is_desktop().await => PowerBatteryInfo {
+            ac_present: Some(true),
+            battery_present: Some(false),
+            ..Default::default()
+        },
+        Err(_) => return None,
     };
     select_profile_from_power(cfg_power, &p)
 }

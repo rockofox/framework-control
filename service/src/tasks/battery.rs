@@ -29,8 +29,19 @@ pub async fn run(
         let ft_opt = { framework_tool_lock.read().await.clone() };
 
         if let Some(cli) = ft_opt {
-            if let Ok(power) = cli.power().await {
-                if power.battery_present == Some(false) {
+            match cli.power().await {
+                Ok(power) => {
+                    if power.battery_present == Some(false) {
+                        last_charge_limit_pct = None;
+                        last_rate_c = None;
+                        last_threshold_pct = None;
+                        last_charge_apply_at = None;
+                        last_rate_apply_at = None;
+                        sleep(Duration::from_secs(1)).await;
+                        continue;
+                    }
+                }
+                Err(_) if cli.is_desktop().await => {
                     last_charge_limit_pct = None;
                     last_rate_c = None;
                     last_threshold_pct = None;
@@ -39,6 +50,7 @@ pub async fn run(
                     sleep(Duration::from_secs(1)).await;
                     continue;
                 }
+                Err(_) => {}
             }
 
             if let Some(setting) = cfg_bat.charge_limit_max_pct.clone() {

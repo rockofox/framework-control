@@ -57,6 +57,15 @@ impl FrameworkTool {
         Ok(parse_versions(&out))
     }
 
+    pub async fn is_desktop(&self) -> bool {
+        self.versions()
+            .await
+            .ok()
+            .and_then(|v| v.mainboard_type)
+            .map(|t| t.to_ascii_lowercase().contains("desktop"))
+            .unwrap_or(false)
+    }
+
     pub async fn set_fan_duty(&self, percent: u32, fan_index: Option<u32>) -> Result<(), String> {
         let percent_s = percent.to_string();
         let fan_idx_s = fan_index.map(|idx| idx.to_string());

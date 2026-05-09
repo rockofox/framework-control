@@ -147,7 +147,15 @@ impl Api {
     #[oai(path = "/power", method = "get", operation_id = "getPower")]
     async fn get_power(&self, state: Data<&AppState>) -> ApiResult<crate::types::PowerResponse> {
         let cli = require_framework_tool_async(&state).await?;
-        let p = cli.power().await.map_err(map_cli_err)?;
+        let p = match cli.power().await {
+            Ok(power) => power,
+            Err(_) if cli.is_desktop().await => crate::cli::framework_tool_parser::PowerBatteryInfo {
+                ac_present: Some(true),
+                battery_present: Some(false),
+                ..Default::default()
+            },
+            Err(err) => return Err(map_cli_err(err)),
+        };
         let has_battery = p.battery_present != Some(false);
 
         // Also include charge limit min/max when available; do not fail if missing
